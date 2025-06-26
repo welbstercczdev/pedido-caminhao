@@ -1,18 +1,18 @@
-// sw.js - Versão com correção para APIs externas
-// INCREMENTE A VERSÃO DO CACHE PARA FORÇAR A ATUALIZAÇÃO
-const CACHE_NAME = 'pedido-caminhao-cache-v5'; 
+// sw.js - VERSÃO FINAL E CORRIGIDA
+const CACHE_NAME = 'pedido-caminhao-cache-v8'; // Versão incrementada para forçar a atualização
 
+// Lista de arquivos essenciais para o App Shell.
+// Garanta que todos esses arquivos existem nos caminhos corretos.
 const urlsToCache = [
-  '/',
   './',
   'index.html',
   'manifest.json',
-  'favicon.ico', // Adicionando o favicon ao cache
+  'favicon.ico',
   'icons/icon-192x192.png',
-  'icons/icon-512x512.png',
-  'icons/icon-maskable-512x512.png'
+  'icons/icon-512x512.png'
 ];
 
+// Evento de instalação: baixa e armazena os assets do App Shell.
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -20,16 +20,14 @@ self.addEventListener('install', event => {
         console.log('[Service Worker] Cache aberto, adicionando App Shell.');
         return cache.addAll(urlsToCache);
       })
-      .then(() => {
-        console.log('[Service Worker] Todos os arquivos foram cacheados com sucesso.');
-        return self.skipWaiting();
-      })
+      .then(() => self.skipWaiting()) // Força o novo SW a se tornar ativo imediatamente.
       .catch(error => {
-        console.error('[Service Worker] Falha ao adicionar arquivos ao cache durante a instalação.', error);
+        console.error('[Service Worker] Falha ao cachear arquivos durante a instalação:', error);
       })
   );
 });
 
+// Evento de ativação: limpa caches antigos.
 self.addEventListener('activate', event => {
   const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
@@ -40,24 +38,22 @@ self.addEventListener('activate', event => {
           return caches.delete(cacheName);
         }
       })
-    )).then(() => {
-      console.log('[Service Worker] Cache antigo limpo, ativando novo Service Worker.');
-      return self.clients.claim();
-    })
+    )).then(() => self.clients.claim()) // Torna-se o SW controlador para todas as abas abertas.
   );
 });
 
+// Evento de fetch: intercepta requisições de rede.
 self.addEventListener('fetch', event => {
-  // --- CORREÇÃO CRÍTICA ABAIXO ---
+  const url = event.request.url;
 
-  // Se a requisição for para uma API externa, o Service Worker não deve interferir.
-  // A chamada 'return;' faz com que o navegador lide com a requisição normalmente.
-  if (event.request.url.includes('script.google.com') || event.request.url.includes('viacep.com.br')) {
-    // Não use 'event.respondWith()'. Apenas saia e deixe a rede acontecer.
+  // CORREÇÃO CRÍTICA: Verifica a string da URL de forma segura.
+  // Se a URL for para uma das nossas APIs, ignora o cache e vai direto para a rede.
+  if (url.startsWith('https://script.google.com/') || url.startsWith('https://viacep.com.br/')) {
+    // Não faz nada, deixa o navegador lidar com a requisição de rede normalmente.
     return;
   }
 
-  // Para todas as outras requisições (nossos arquivos locais), use a estratégia "Cache-First".
+  // Para todas as outras requisições, usa a estratégia "Cache-First".
   event.respondWith(
     caches.match(event.request)
       .then(cachedResponse => {
@@ -65,22 +61,8 @@ self.addEventListener('fetch', event => {
         if (cachedResponse) {
           return cachedResponse;
         }
-
-        // Se não, busca na rede.
-        return fetch(event.request).then(networkResponse => {
-            if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-              return networkResponse;
-            }
-            
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME)
-              .then(cache => {
-                cache.put(event.request, responseToCache);
-              });
-
-            return networkResponse;
-          }
-        );
+        // Se não estiver no cache, busca na rede.
+        return fetch(event.request);
       })
   );
 });
